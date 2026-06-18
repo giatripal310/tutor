@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tutor Tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='80'>&#x1F5D3;&#xFE0F;</text></svg>" />
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; padding-bottom: 68px; }
+  button { font-family: inherit; cursor: pointer; }
+  input, select, textarea { font-family: inherit; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .modal { background: #fff; border-radius: 14px; padding: 24px; width: min(340px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,0.15); max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px; }
+  .modal label { font-size: 11px; font-weight: 600; color: #64748b; display: block; margin-bottom: 3px; margin-top: 10px; }
+  .modal input, .modal select { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; font-size: 13px; color: #0f172a; background: #f8fafc; outline: none; }
+  .modal .row { display: flex; gap: 8px; margin-top: 16px; }
+  .btn-primary { flex: 1; background: #1e3a5f; color: #fff; border: none; border-radius: 8px; padding: 10px 0; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .btn-cancel { background: #f1f5f9; color: #64748b; border: none; border-radius: 8px; padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .btn-danger { background: #fee2e2; color: #dc2626; border: none; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .add-btn { background: #f1f5f9; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 8px 16px; font-size: 13px; color: #64748b; width: 100%; margin-top: 4px; cursor: pointer; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .tag { display: inline-block; border-radius: 5px; padding: 2px 7px; font-size: 10px; font-weight: 600; cursor: pointer; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1.5px solid #e2e8f0; display: flex; z-index: 100; padding-bottom: env(safe-area-inset-bottom); }
+  .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; gap: 2px; }
+  .nav-tab-icon { font-size: 20px; line-height: 1; }
+  .nav-tab-label { font-size: 10px; font-weight: 700; letter-spacing: 0.2px; }
+
+  /* Sign-in screen */
+  .signin-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; background: #f0f4f8; }
+  .signin-logo { font-size: 56px; margin-bottom: 16px; }
+  .signin-title { font-size: 26px; font-weight: 900; color: #1e3a5f; margin-bottom: 6px; }
+  .signin-sub { font-size: 14px; color: #64748b; margin-bottom: 40px; text-align: center; line-height: 1.5; }
+  .google-btn { display: flex; align-items: center; gap: 12px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 24px; font-size: 15px; font-weight: 700; color: #0f172a; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: box-shadow 0.15s; width: 100%; max-width: 300px; justify-content: center; }
+  .google-btn:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .google-btn svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .signin-note { font-size: 11px; color: #94a3b8; margin-top: 20px; text-align: center; max-width: 260px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const DAYS=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const SHORT=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CLASS_COLORS=[{bg:"#dbeafe",border:"#3b82f6",text:"#1d4ed8"},{bg:"#fce7f3",border:"#ec4899",text:"#be185d"},{bg:"#d1fae5",border:"#10b981",text:"#065f46"},{bg:"#ede9fe",border:"#8b5cf6",text:"#5b21b6"},{bg:"#ffedd5",border:"#f97316",text:"#9a3412"},{bg:"#cffafe",border:"#06b6d4",text:"#155e75"},{bg:"#fef9c3",border:"#eab308",text:"#713f12"},{bg:"#ffe4e6",border:"#f43f5e",text:"#9f1239"}];
+let uid=()=>Math.random().toString(36).slice(2,8);
+function toISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function formatDate(d){return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;}
+function getMondayOf(date){const d=new Date(date),day=d.getDay();d.setDate(d.getDate()+(day===0?-6:1-day));d.setHours(0,0,0,0);return d;}
+function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+n);return d;}
+function buildWeeks(mon){const w=[];for(let i=0;i<4;i++){const wk=[];for(let d=0;d<7;d++)wk.push(addDays(mon,i*7+d));w.push(wk);}return w;}
+const todayISO=toISO(new Date());
+const baseMonday=getMondayOf(new Date());
+const weeks=buildWeeks(baseMonday);
+const firebaseConfig={apiKey:"AIzaSyDC8kNTggQ2E0yn6L5flZKBDfEcFZ2dse4",authDomain:"tutor-tracker-10819.firebaseapp.com",databaseURL:"https://tutor-tracker-10819-default-rtdb.firebaseio.com",projectId:"tutor-tracker-10819",storageBucket:"tutor-tracker-10819.firebasestorage.app",messagingSenderId:"1060597127713",appId:"1:1060597127713:web:3304a5e20521c60032e160"};
+let db=null,auth=null,dataListener=null;
+let state={data:{students:[],classes:[],attendance:{},collected:{}},view:"week",selectedDate:todayISO,selectedClass:null,modal:null,form:{},connected:false,syncing:true,syncError:false,user:null,authReady:false};
+
+function userPath(){ return 'data/'+state.user.uid; }
+function setState(patch){Object.assign(state,patch);render();}
+function fbSet(path,value){if(!db)return;db.ref(path).set(value).catch(e=>{console.error(e);setState({syncError:true});});}
+function fbRemove(path){if(!db)return;db.ref(path).remove().catch(e=>{console.error(e);setState({syncError:true});});}
+function getStudent(id){return state.data.students.find(s=>s.id===id);}
+function getClass(id){return state.data.classes.find(c=>c.id===id);}
+function getTimeForDay(cls,dayName){if(cls.schedule&&cls.schedule[dayName])return cls.schedule[dayName];return cls.time||"";}
+function getDays(cls){if(cls.schedule)return Object.keys(cls.schedule);return cls.days||[];}
+function classesOnDay(dayName){return state.data.classes.filter(c=>getDays(c).includes(dayName)).sort((a,b)=>getTimeForDay(a,dayName).localeCompare(getTimeForDay(b,dayName)));}
+function hasTutoringOnDate(dateObj){const raw=dateObj.getDay();const dayName=raw===0?"Sunday":DAYS[raw-1];return state.data.classes.some(c=>getDays(c).includes(dayName));}
+function studentsInClass(cls){return(cls.studentIds||[]).map(id=>getStudent(id)).filter(Boolean);}
+function attKey(classId,studentId,date){return `${classId}__${studentId}__${date}`;}
+function getAttStatus(classId,studentId,date){return(state.data.attendance||{})[attKey(classId,studentId,date)]||null;}
+function totalSessions(studentId){return Object.entries(state.data.attendance||{}).filter(([k,v])=>{const parts=k.split('__');return parts[1]===studentId&&(v==='present'||v==='absent_parent');}).length;}
+function sessionsSinceCollection(studentId){const total=totalSessions(studentId);const threshold=studentThreshold(studentId);return total%threshold===0&&total>0?threshold:total%threshold;}
+function wasCollectedOnTime(studentId){const entry=(state.data.collected||{})[studentId];if(!entry)return false;if(typeof entry==='object'){const total=totalSessions(studentId);const threshold=studentThreshold(studentId);const currentCycle=Math.floor(total/threshold);const collectedCycle=entry.cycle!==undefined?entry.cycle:-1;return entry.onTime===true&&collectedCycle===currentCycle;}return false;}
+function studentThreshold(studentId){const daysPerWeek=state.data.classes.filter(c=>(c.studentIds||[]).includes(studentId)).reduce((sum,c)=>getDays(c).length+sum,0);return Math.max(daysPerWeek,1)*4;}
+function getAlerts(){return state.data.students.filter(stu=>{const threshold=studentThreshold(stu.id);const progress=sessionsSinceCollection(stu.id);return progress>=threshold;}).map(stu=>({studentId:stu.id,studentName:stu.name,fee:stu.fee,pending:sessionsSinceCollection(stu.id),threshold:studentThreshold(stu.id)}));}
+function addClass(){const{name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return alert("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return alert("Please set a time for "+day);}const cls={id:uid(),name,schedule,studentIds:[]};state.data.classes.push(cls);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
+function deleteClass(id){if(!confirm("Delete this class?"))return;state.data.classes=state.data.classes.filter(c=>c.id!==id);fbSet(userPath()+'/classes',state.data.classes);setState({selectedClass:null,view:"week"});}
+function editClass(){const{classId,name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return alert("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return alert("Please set a time for "+day);}const cls=state.data.classes.find(c=>c.id===classId);if(!cls)return;cls.name=name;cls.schedule=schedule;delete cls.days;delete cls.time;fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
+function saveStudentAssignments(classId,studentIds){const cls=state.data.classes.find(c=>c.id===classId);if(!cls)return;cls.studentIds=studentIds;fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
+function addStudent(){const{name,fee}=state.form;if(!name)return alert("Enter student name.");const stu={id:uid(),name,fee:parseFloat(fee)||0};state.data.students.push(stu);fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
+function editStudent(studentId){const{name,fee}=state.form;if(!name)return alert("Enter student name.");const stu=state.data.students.find(s=>s.id===studentId);if(!stu)return;stu.name=name;stu.fee=parseFloat(fee)||0;fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
+function deleteStudent(studentId){if(!confirm("Remove this student? Their attendance history will be kept."))return;state.data.students=state.data.students.filter(s=>s.id!==studentId);state.data.classes.forEach(c=>{c.studentIds=(c.studentIds||[]).filter(id=>id!==studentId);});fbSet(userPath()+'/students',state.data.students);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{},selectedStudent:null});}
+function setAttendance(classId,studentId,date,value){if(!state.data.attendance)state.data.attendance={};const key=attKey(classId,studentId,date);const safeKey=key.replace(/\./g,'_');if(value===null){delete state.data.attendance[key];fbRemove(userPath()+`/attendance/${safeKey}`);}else{state.data.attendance[key]=value;fbSet(userPath()+`/attendance/${safeKey}`,value);}render();}
+function markCollected(studentId){if(!state.data.collected)state.data.collected={};const threshold=studentThreshold(studentId);const total=totalSessions(studentId);const cyclesCompleted=Math.floor(total/threshold);const isOnTime=(total%threshold)!==0||total===0;state.data.collected[studentId]={cycle:cyclesCompleted,onTime:isOnTime};fbSet(userPath()+`/collected/${studentId}`,state.data.collected[studentId]);render();}
+
+function signIn(){
+  const provider=new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(e=>{
+    // fallback to redirect on mobile
+    auth.signInWithRedirect(provider);
+  });
+}
+function signOut(){if(!confirm("Sign out?"))return;if(dataListener){db.ref(userPath()).off();dataListener=null;}auth.signOut();}
+
+function startDataListener(){
+  if(dataListener)return;
+  dataListener=true;
+  db.ref(userPath()).on("value",snap=>{
+    const val=snap.val();
+    if(val){
+      state.data.students=val.students||[];
+      state.data.classes=val.classes||[];
+      state.data.attendance=val.attendance||{};
+      state.data.collected=val.collected||{};
+    } else {
+      state.data={students:[],classes:[],attendance:{},collected:{}};
+    }
+    setState({syncing:false,syncError:false});
+  },err=>{console.error(err);setState({syncing:false,syncError:true});});
+}
+
+function el(tag,attrs={},...children){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==="style"&&typeof v==="object")Object.assign(e.style,v);else if(k.startsWith("on"))e.addEventListener(k.slice(2).toLowerCase(),v);else if(k==="className")e.className=v;else e.setAttribute(k,v);}for(const c of children){if(c==null||c===false)continue;e.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c);}return e;}
+function div(a,...c){return el("div",a,...c);}
+function btn(a,...c){return el("button",a,...c);}
+function span(a,...c){return el("span",a,...c);}
+
+function renderSignIn(){
+  const googleIcon=`<svg viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20c11 0 19.7-7.9 19.7-20 0-1.3-.1-2.7-.2-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/><path fill="#FBBC05" d="M24 43c5.6 0 10.6-1.9 14.5-5.1l-6.7-5.5C29.8 34.4 27 35.5 24 35.5c-5.7 0-10.6-3.9-12.3-9.2l-7 5.4C8 38.7 15.4 43 24 43z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.8l6.7 5.5C42.4 36 45 30 45 23c0-1.3-.1-2.7-.5-3z"/></svg>`;
+  const appDiv=document.getElementById("app");
+  appDiv.innerHTML="";
+  appDiv.appendChild(
+    div({className:"signin-screen"},
+      div({className:"signin-logo"},"📅"),
+      div({className:"signin-title"},"Tutor Tracker"),
+      div({className:"signin-sub"},"Keep track of your tutoring schedule, attendance, and tuition — all in one place."),
+      btn({className:"google-btn",onClick:signIn},
+        el("span",{},googleIcon.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"')),
+        "Continue with Google"
+      ),
+      div({className:"signin-note"},"Your data is private. Only you can see your classes and students.")
+    )
+  );
+  // Actually set innerHTML for SVG to work
+  document.querySelector(".google-btn span").innerHTML=googleIcon;
+}
+
+function renderWeekTimetable(){
+  const weekDates=[];
+  for(let i=0;i<7;i++)weekDates.push(addDays(baseMonday,i));
+  const dayCards=weekDates.map((d,i)=>{
+    const iso=toISO(d),isToday=iso===todayISO,isSel=iso===state.selectedDate;
+    const isPast=d<new Date(todayISO),dayName=DAYS[i],dayCls=classesOnDay(dayName);
+    return div({style:{background:isSel?"#f0f6ff":"#fff",border:`1.5px solid ${isToday?"#3b82f6":isSel?"#bfdbfe":"#e2e8f0"}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden",cursor:"pointer"},onClick:()=>setState({selectedDate:iso})},
+      div({style:{display:"flex",alignItems:"center",gap:"8px",padding:"10px 14px",background:isToday?"#1e3a5f":isSel?"#eff6ff":"transparent"}},
+        span({style:{fontSize:"13px",fontWeight:800,color:isToday?"#fff":isPast?"#94a3b8":"#0f172a",minWidth:"30px"}},SHORT[i]),
+        span({style:{fontSize:"12px",color:isToday?"#93c5fd":isPast?"#cbd5e1":"#64748b"}},d.getDate()+" "+MONTHS[d.getMonth()].slice(0,3)),
+        isToday?span({style:{background:"#3b82f6",color:"#fff",borderRadius:"5px",padding:"1px 7px",fontSize:"10px",fontWeight:700}},"Today"):span({}),
+        dayCls.length>0?span({style:{marginLeft:"auto",fontSize:"10px",fontWeight:600,color:isToday?"#93c5fd":isSel?"#3b82f6":"#94a3b8"}},dayCls.length+" class"+(dayCls.length>1?"es":"")):span({})
+      ),
+      dayCls.length>0?div({style:{padding:"8px 14px 10px",display:"flex",flexDirection:"column",gap:"6px"}},
+        ...dayCls.map(cls=>{
+          const col=getClassColor(cls.id),stuCount=(cls.studentIds||[]).length;
+          return div({style:{display:"flex",alignItems:"center",gap:"10px",background:col.bg,borderLeft:`3px solid ${col.border}`,borderRadius:"7px",padding:"9px 12px",cursor:"pointer"},
+            onClick:e=>{e.stopPropagation();setState({view:"class",selectedClass:cls.id});}},
+            div({style:{flex:1,minWidth:0}},
+              div({style:{fontSize:"13px",fontWeight:700,color:col.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},cls.name),
+              div({style:{fontSize:"11px",color:col.border,marginTop:"1px"}},getTimeForDay(cls,dayName)+" · "+stuCount+" student"+(stuCount!==1?"s":""))
+            ),
+            span({style:{fontSize:"13px",color:col.border,fontWeight:700,flexShrink:0}},"›")
+          );
+        })
+      ):div({style:{padding:"4px 14px 10px",fontSize:"12px",color:"#cbd5e1"}},"No classes")
+    );
+  });
+  return div({className:"card",style:{marginBottom:"14px"}},
+    div({style:{fontSize:"12px",fontWeight:700,color:"#1e3a5f",marginBottom:"10px",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+      span({},"This Week"),
+      span({style:{fontSize:"10px",color:"#94a3b8",fontWeight:400}},weekDates[0].getDate()+" "+MONTHS[weekDates[0].getMonth()].slice(0,3)+" – "+weekDates[6].getDate()+" "+MONTHS[weekDates[6].getMonth()].slice(0,3))
+    ),
+    ...dayCards
+  );
+}
+
+function getClassColor(classId){const idx=state.data.classes.findIndex(c=>c.id===classId);return CLASS_COLORS[idx%CLASS_COLORS.length]||CLASS_COLORS[0];}
+
+function renderCalendar(){
+  const months=[...new Set(weeks.flat().map(d=>`${MONTHS[d.getMonth()]} ${d.getFullYear()}`))].join(" – ");
+  const dayHeaders=div({style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",marginBottom:"4px"}},...SHORT.map(s=>div({style:{textAlign:"center",fontSize:"10px",fontWeight:700,color:"#94a3b8"}},s)));
+  const weekRows=weeks.map(week=>div({style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",marginBottom:"3px"}},...week.map(dateObj=>{
+    const iso=toISO(dateObj),isToday=iso===todayISO,isSel=iso===state.selectedDate;
+    const isPast=dateObj<new Date(todayISO);
+    const hasClass=hasTutoringOnDate(dateObj);
+    return div({style:{textAlign:"center",padding:"5px 2px",borderRadius:"7px",cursor:"pointer",background:isSel?"#1e3a5f":isToday?"#dbeafe":"transparent",border:isToday&&!isSel?"1.5px solid #3b82f6":"1.5px solid transparent"},onClick:()=>setState({selectedDate:iso,view:"week"})},
+      div({style:{fontSize:"13px",fontWeight:isToday||isSel?800:500,color:isSel?"#fff":isToday?"#1d4ed8":isPast?"#cbd5e1":"#0f172a"}},dateObj.getDate()+""),
+      div({style:{display:"flex",justifyContent:"center",gap:"2px",marginTop:"1px"}},
+        hasClass?span({style:{width:"4px",height:"4px",borderRadius:"50%",background:isSel?"#fde68a":"#f59e0b",display:"inline-block"}}):span({})
+      )
+    );
+  })));
+  return div({className:"card",style:{marginBottom:"14px"}},
+    div({style:{fontSize:"13px",fontWeight:700,color:"#1e3a5f",marginBottom:"10px",display:"flex",justifyContent:"space-between"}},span({},months),span({style:{fontSize:"11px",color:"#94a3b8",fontWeight:400}},"4 weeks")),
+    dayHeaders,...weekRows
+  );
+}
+
+function renderDayPanel(){
+  const[sy,sm,sd]=state.selectedDate.split('-').map(Number);
+  const selDateObj=new Date(sy,sm-1,sd),rawDay=selDateObj.getDay();
+  const selDayName=rawDay===0?"Sunday":DAYS[rawDay-1],isToday=state.selectedDate===todayISO;
+  const heading=div({style:{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:"12px"}},div({},
+    span({style:{fontWeight:800,fontSize:"16px",color:"#1e3a5f"}},selDayName),
+    span({style:{marginLeft:"8px",fontSize:"13px",color:"#64748b"}},formatDate(selDateObj)),
+    isToday?span({style:{marginLeft:"8px",background:"#3b82f6",color:"#fff",borderRadius:"5px",padding:"1px 7px",fontSize:"11px",fontWeight:700}},"Today"):span({})
+  ));
+  const dayClasses=classesOnDay(selDayName);
+  const classCards=dayClasses.length===0?[div({style:{color:"#94a3b8",fontSize:"13px",marginBottom:"10px"}},"No tutoring classes on "+selDayName+"s.")]:dayClasses.map(cls=>{
+    const col=getClassColor(cls.id),students=studentsInClass(cls);
+    const chips=students.length>0?div({style:{marginTop:"10px",display:"flex",flexDirection:"column",gap:"8px"}},...students.map(stu=>{
+      const status=getAttStatus(cls.id,stu.id,state.selectedDate);
+      return div({style:{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}},
+        span({style:{fontSize:"13px",fontWeight:600,color:"#0f172a",minWidth:"80px",flexShrink:0}},stu.name),
+        btn({style:{background:status==="present"?"#dcfce7":"#f1f5f9",border:`1.5px solid ${status==="present"?"#86efac":"#e2e8f0"}`,borderRadius:"20px",padding:"5px 12px",fontSize:"12px",fontWeight:600,color:status==="present"?"#15803d":"#64748b"},onClick:()=>setAttendance(cls.id,stu.id,state.selectedDate,status==="present"?null:"present")},"✓ Present"),
+        btn({style:{background:status==="absent_teacher"?"#fef3c7":"#f1f5f9",border:`1.5px solid ${status==="absent_teacher"?"#f59e0b":"#e2e8f0"}`,borderRadius:"20px",padding:"5px 12px",fontSize:"12px",fontWeight:600,color:status==="absent_teacher"?"#92400e":"#64748b"},onClick:()=>setAttendance(cls.id,stu.id,state.selectedDate,status==="absent_teacher"?null:"absent_teacher")},"✗ Teacher"),
+        btn({style:{background:status==="absent_parent"?"#fce7f3":"#f1f5f9",border:`1.5px solid ${status==="absent_parent"?"#ec4899":"#e2e8f0"}`,borderRadius:"20px",padding:"5px 12px",fontSize:"12px",fontWeight:600,color:status==="absent_parent"?"#be185d":"#64748b"},onClick:()=>setAttendance(cls.id,stu.id,state.selectedDate,status==="absent_parent"?null:"absent_parent")},"✗ Parent")
+      );
+    })):div({style:{marginTop:"6px",fontSize:"12px",color:"#94a3b8"}},"No students assigned.");
+    return div({style:{background:col.bg,border:`1.5px solid ${col.border}`,borderRadius:"8px",padding:"10px 14px",marginBottom:"8px"}},
+      div({style:{display:"flex",alignItems:"center",justifyContent:"space-between"}},
+        div({},span({style:{fontWeight:700,fontSize:"14px",color:col.text}},cls.name),span({style:{marginLeft:"8px",fontSize:"12px",color:col.border}},getTimeForDay(cls,selDayName))),
+        btn({style:{background:"rgba(255,255,255,0.7)",color:col.text,border:"none",borderRadius:"6px",padding:"4px 10px",fontSize:"12px",fontWeight:600},onClick:()=>setState({view:"class",selectedClass:cls.id})},"Open →")
+      ),chips
+    );
+  });
+  const addClassBtn=btn({className:"add-btn",onClick:()=>setState({modal:"addClass",form:{schedule:{[selDayName]:""}}})},`+ Add class on ${selDayName}s`);
+  return div({className:"card"},heading,div({style:{fontSize:"11px",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:"8px"}},"Tutoring Classes"),...classCards,addClassBtn);
+}
+
+function renderClassView(){
+  const classTabs=div({style:{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"14px",alignItems:"center"}},
+    ...state.data.classes.map(cls=>btn({style:{background:state.selectedClass===cls.id?"#1e3a5f":"#fff",color:state.selectedClass===cls.id?"#fff":"#334155",border:"1.5px solid",borderColor:state.selectedClass===cls.id?"#1e3a5f":"#e2e8f0",borderRadius:"8px",padding:"6px 14px",fontSize:"13px",fontWeight:600},onClick:()=>setState({selectedClass:cls.id})},cls.name)),
+    btn({style:{background:"#f1f5f9",border:"1.5px dashed #cbd5e1",borderRadius:"8px",padding:"6px 14px",fontSize:"13px",color:"#64748b"},onClick:()=>setState({modal:"addClass",form:{schedule:{}}})},`+ New Class`)
+  );
+  const cls=getClass(state.selectedClass);
+  if(!cls)return div({},classTabs,div({style:{color:"#94a3b8",padding:"20px"}},"Select or create a class."));
+  const col=getClassColor(cls.id),students=studentsInClass(cls);
+  const studentRows=students.map(stu=>{
+    const total=totalSessions(stu.id),threshold=studentThreshold(stu.id);
+    const progress=sessionsSinceCollection(stu.id),dueAlert=progress>=threshold;
+    const barGreen=wasCollectedOnTime(stu.id),barColor=barGreen?"#22c55e":"#ef4444";
+    function getExpectedDates(cls,studentId){
+      const scheduledDays=getDays(cls),today=new Date(todayISO),lastWeekMonday=addDays(getMondayOf(today),-7);
+      const allSessions=Object.entries(state.data.attendance||{}).filter(([k,v])=>{const p=k.split('__');return p[1]===studentId&&(v==='present'||v==='absent_parent');}).map(([k])=>k.split('__')[2]).sort();
+      const total=allSessions.length,threshold=studentThreshold(studentId),cycleStart=Math.floor(total/threshold)*threshold;
+      let cycleResetDate=null;if(cycleStart>0)cycleResetDate=addDays(new Date(allSessions[cycleStart-1]),1);
+      const start=cycleResetDate&&cycleResetDate>lastWeekMonday?cycleResetDate:lastWeekMonday;
+      const oneWeekAhead=addDays(today,7),result=[];
+      for(let d=new Date(start);d<=oneWeekAhead;d=addDays(d,1)){const raw=d.getDay();const dayName=raw===0?"Sunday":DAYS[raw-1];if(scheduledDays.includes(dayName))result.push(toISO(d));}
+      return result.reverse();
+    }
+    function fmtAttDate(iso){const[y,m,d]=iso.split('-').map(Number);return `${d} ${MONTHS[m-1].slice(0,3)}`;}
+    const expectedDates=getExpectedDates(cls,stu.id);
+    const tableRows=expectedDates.map(date=>{
+      const status=getAttStatus(cls.id,stu.id,date),isToday=date===todayISO;
+      return div({style:{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"4px",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f0f4f8"}},
+        span({style:{fontSize:"12px",color:isToday?"#1d4ed8":date>todayISO?"#7c3aed":"#334155",fontWeight:isToday||date>todayISO?700:400}},fmtAttDate(date)+(isToday?" ★":date>todayISO?" ↑":"")),
+        btn({style:{background:status==="present"?"#dcfce7":"#f1f5f9",border:`1.5px solid ${status==="present"?"#86efac":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="present"?"#15803d":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="present"?null:"present")},"✓"),
+        btn({style:{background:status==="absent_teacher"?"#fef3c7":"#f1f5f9",border:`1.5px solid ${status==="absent_teacher"?"#f59e0b":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_teacher"?"#92400e":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_teacher"?null:"absent_teacher")},"T"),
+        btn({style:{background:status==="absent_parent"?"#fce7f3":"#f1f5f9",border:`1.5px solid ${status==="absent_parent"?"#ec4899":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_parent"?"#be185d":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_parent"?null:"absent_parent")},"P")
+      );
+    });
+    return div({style:{border:`1.5px solid ${dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0"}`,borderRadius:"10px",padding:"14px",marginBottom:"10px",background:dueAlert?"#fef2f2":barGreen?"#f0fdf4":"#f8fafc"}},
+      div({style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"8px",gap:"8px"}},
+        div({style:{flex:1,minWidth:0}},
+          span({style:{fontWeight:700,fontSize:"14px",color:"#0f172a"}},stu.name),
+          span({style:{marginLeft:"8px",fontSize:"12px",color:"#64748b"}},stu.fee+"k"),
+          dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 7px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect"):span({})
+        ),
+        div({style:{display:"flex",gap:"6px",flexShrink:0}},
+          btn({style:{background:dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0",color:dueAlert||barGreen?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰 Collect"),
+          btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>{cls.studentIds=(cls.studentIds||[]).filter(id=>id!==stu.id);fbSet(userPath()+'/classes',state.data.classes);render();}},"✕")
+        )
+      ),
+      div({style:{marginBottom:"10px"}},
+        div({style:{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#64748b",marginBottom:"3px"}},span({},"Sessions this cycle: "+progress),span({},progress+"/"+threshold)),
+        div({style:{background:"#e2e8f0",borderRadius:"99px",height:"7px",overflow:"hidden"}},div({style:{background:barColor,width:`${Math.min((progress/threshold)*100,100)}%`,height:"100%",borderRadius:"99px",transition:"width 0.3s"}}))
+      ),
+      div({style:{borderRadius:"8px",overflow:"hidden",border:"1px solid #e2e8f0",background:"#fff"}},
+        div({style:{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"4px",padding:"5px 8px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}},
+          span({style:{fontSize:"10px",fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}},"Date"),
+          span({style:{fontSize:"10px",fontWeight:700,color:"#22c55e"}},"✓"),
+          span({style:{fontSize:"10px",fontWeight:700,color:"#f59e0b"}},"T"),
+          span({style:{fontSize:"10px",fontWeight:700,color:"#ec4899"}},"P")
+        ),
+        div({style:{padding:"0 8px",maxHeight:"220px",overflowY:"auto"}},expectedDates.length===0?div({style:{padding:"10px",fontSize:"12px",color:"#94a3b8"}},"No scheduled sessions yet."):div({},...tableRows))
+      )
+    );
+  });
+  return div({},classTabs,div({className:"card"},
+    div({style:{marginBottom:"14px"}},
+      div({style:{fontSize:"17px",fontWeight:800,color:"#0f172a",marginBottom:"4px"}},cls.name),
+      div({style:{fontSize:"12px",color:"#64748b",marginBottom:"12px"}},Object.entries(cls.schedule||{}).map(([d,t])=>d.slice(0,3)+" "+t).join("  ·  ")),
+      div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},
+        btn({style:{background:col.bg,color:col.text,border:`1px solid ${col.border}`,borderRadius:"7px",padding:"7px 14px",fontSize:"12px",fontWeight:700},onClick:()=>setState({modal:"assignStudents",form:{studentIds:[...(cls.studentIds||[])],classId:cls.id}})},`+ Assign Students`),
+        btn({style:{background:"#f1f5f9",color:"#334155",border:"none",borderRadius:"7px",padding:"7px 14px",fontSize:"12px",fontWeight:700},onClick:()=>setState({modal:"editClass",form:{classId:cls.id,name:cls.name,schedule:Object.assign({},(cls.schedule||{}))}})},"Edit"),
+        btn({className:"btn-danger",style:{padding:"7px 14px"},onClick:()=>deleteClass(cls.id)},"Delete")
+      )
+    ),
+    div({style:{fontSize:"12px",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:"10px"}},"Students in this class"),
+    students.length===0?div({style:{color:"#94a3b8",fontSize:"13px",marginBottom:"10px"}},"No students assigned."):span({}),
+    ...studentRows
+  ));
+}
+
+function renderStudentsView(){
+  return div({},
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}},
+      div({style:{fontWeight:700,fontSize:"15px",color:"#1e3a5f"}},"All Students"),
+      btn({className:"btn-primary",style:{padding:"8px 16px",fontSize:"13px",borderRadius:"8px"},onClick:()=>setState({modal:"addStudent",form:{}})},"+ New Student")
+    ),
+    state.data.students.length===0?div({className:"card",style:{color:"#94a3b8",fontSize:"13px"}},"No students yet."):span({}),
+    ...state.data.students.map(stu=>{
+      const threshold=studentThreshold(stu.id),total=totalSessions(stu.id),progress=sessionsSinceCollection(stu.id);
+      const dueAlert=progress>=threshold,barGreen=wasCollectedOnTime(stu.id),barColor=barGreen?"#22c55e":"#ef4444";
+      const enrolledClasses=state.data.classes.filter(c=>(c.studentIds||[]).includes(stu.id));
+      return div({className:"card",style:{marginBottom:"10px",border:`1.5px solid ${dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0"}`,background:dueAlert?"#fef2f2":barGreen?"#f0fdf4":"#fff"}},
+        div({style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"8px",gap:"8px"}},
+          div({style:{flex:1,minWidth:0}},
+            span({style:{fontWeight:700,fontSize:"15px",color:"#0f172a"}},stu.name),
+            span({style:{marginLeft:"8px",fontSize:"12px",color:"#64748b"}},stu.fee+"k/cycle"),
+            dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 8px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect Tuition"):span({})
+          ),
+          div({style:{display:"flex",gap:"6px",flexShrink:0}},
+            btn({style:{background:dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0",color:dueAlert||barGreen?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰"),
+            btn({style:{background:"#f1f5f9",color:"#334155",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:600},onClick:()=>setState({modal:"editStudent",form:{name:stu.name,fee:stu.fee,studentId:stu.id}})},"Edit"),
+            btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>deleteStudent(stu.id)},"✕")
+          )
+        ),
+        div({style:{fontSize:"11px",color:"#64748b",marginBottom:"8px"}},enrolledClasses.length===0?"Not assigned to any class yet":"Classes: "+enrolledClasses.map(c=>c.name).join(", ")),
+        div({style:{marginBottom:"4px"}},
+          div({style:{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#64748b",marginBottom:"3px"}},span({},"Sessions this cycle: "+progress),span({},progress+"/"+threshold)),
+          div({style:{background:"#e2e8f0",borderRadius:"99px",height:"7px",overflow:"hidden"}},div({style:{background:barColor,width:`${Math.min((progress/threshold)*100,100)}%`,height:"100%",borderRadius:"99px",transition:"width 0.3s"}}))
+        ),
+        div({style:{fontSize:"10px",color:"#94a3b8"}},"Total all-time sessions: "+total)
+      );
+    })
+  );
+}
+
+function renderModal(){
+  if(!state.modal)return null;
+  if(state.modal==="addClass"||state.modal==="editClass"){
+    const isEdit=state.modal==="editClass";
+    if(!state.form.schedule)state.form.schedule={};
+    const nameInp=el("input",{type:"text",placeholder:"e.g. Math Grade 8",value:state.form.name||"",onInput:e=>state.form.name=e.target.value});
+    const daySection=div({style:{marginTop:"4px"}},
+      div({style:{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}},...DAYS.map(d=>{const checked=d in(state.form.schedule||{});return div({style:{padding:"4px 10px",borderRadius:"20px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:checked?"#1e3a5f":"#f1f5f9",color:checked?"#fff":"#64748b",border:checked?"1.5px solid #1e3a5f":"1.5px solid #e2e8f0",userSelect:"none"},onClick:()=>{const sch=Object.assign({},state.form.schedule||{});if(d in sch)delete sch[d];else sch[d]="";state.form.schedule=sch;setState({});}},d.slice(0,3));})),
+      ...Object.keys(state.form.schedule||{}).map(d=>div({style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},span({style:{fontSize:"12px",fontWeight:600,color:"#334155",width:"40px",flexShrink:0}},d.slice(0,3)),el("input",{type:"text",placeholder:"e.g. 4:30 PM",value:(state.form.schedule||{})[d]||"",style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:"7px",padding:"6px 10px",fontSize:"13px",outline:"none"},onInput:e=>{state.form.schedule[d]=e.target.value;}})))
+    );
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},isEdit?"Edit Class":"New Class"),el("label",{},"Class Name"),nameInp,el("label",{},"Days & Times"),daySection,div({className:"row"},btn({className:"btn-primary",onClick:isEdit?editClass:addClass},isEdit?"Save Changes":"Add Class"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+  }
+  if(state.modal==="addStudent"){
+    const nameInp=el("input",{type:"text",placeholder:"e.g. Bo",value:state.form.name||"",onInput:e=>state.form.name=e.target.value});
+    const feeInp=el("input",{type:"number",placeholder:"e.g. 750",value:state.form.fee||"",onInput:e=>state.form.fee=e.target.value});
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"New Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k (e.g. 750 = 750k)"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:addStudent},"Add Student"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+  }
+  if(state.modal==="editStudent"){
+    const nameInp=el("input",{type:"text",value:state.form.name||"",onInput:e=>state.form.name=e.target.value});
+    const feeInp=el("input",{type:"number",value:state.form.fee||"",onInput:e=>state.form.fee=e.target.value});
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"Edit Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:()=>editStudent(state.form.studentId)},"Save"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+  }
+  if(state.modal==="assignStudents"){
+    const classId=state.form.classId,selected=state.form.studentIds||[];
+    const pills=div({style:{display:"flex",flexWrap:"wrap",gap:"6px",marginTop:"4px"}},...state.data.students.map(stu=>{const checked=selected.includes(stu.id);return div({style:{padding:"5px 12px",borderRadius:"20px",fontSize:"13px",fontWeight:600,cursor:"pointer",background:checked?"#1e3a5f":"#f1f5f9",color:checked?"#fff":"#64748b",border:checked?"1.5px solid #1e3a5f":"1.5px solid #e2e8f0",userSelect:"none"},onClick:()=>{state.form.studentIds=selected.includes(stu.id)?selected.filter(x=>x!==stu.id):[...selected,stu.id];setState({});}},stu.name);}));
+    const noStudents=state.data.students.length===0?div({style:{color:"#94a3b8",fontSize:"13px",marginTop:"8px"}},"No students yet. Go to the Students tab to add some first."):null;
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"Assign Students to Class"),el("label",{},"Select students (tap to toggle)"),noStudents||pills,div({className:"row"},btn({className:"btn-primary",onClick:()=>saveStudentAssignments(classId,state.form.studentIds||[])},"Save"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+  }
+}
+
+function render(){
+  if(!state.authReady){
+    document.getElementById("app").innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:14px;color:#94a3b8;">Loading…</div>';
+    return;
+  }
+  if(!state.user){renderSignIn();return;}
+  const app=document.getElementById("app");
+  while(app.firstChild)app.removeChild(app.firstChild);
+  const alerts=getAlerts();
+  if(alerts.length>0){app.appendChild(div({style:{background:"#fef3c7",borderBottom:"2px solid #f59e0b",padding:"10px 16px"}},el("strong",{style:{color:"#92400e",fontSize:"13px"}},"💰 Tuition Due: "),span({style:{fontSize:"12px",color:"#92400e"}},alerts.map(a=>`${a.studentName} (${a.pending} sessions · ${a.fee}k)`).join("  ·  "))));}
+  const syncDot=span({style:{width:"6px",height:"6px",borderRadius:"50%",display:"inline-block",background:state.syncError?"#f87171":state.syncing?"#fbbf24":state.connected?"#4ade80":"#94a3b8"}});
+  const syncLabel=span({style:{fontSize:"10px"}},state.syncError?"Error":state.syncing?"Syncing…":state.connected?"Live":"Connecting…");
+  const avatar=state.user.photoURL?el("img",{src:state.user.photoURL,style:{width:"28px",height:"28px",borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",cursor:"pointer"},onClick:signOut}):btn({style:{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:"20px",color:"#fff",fontSize:"11px",fontWeight:600,padding:"4px 10px",cursor:"pointer"},onClick:signOut},"Sign out");
+  app.appendChild(div({style:{background:"#1e3a5f",color:"#fff",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+    div({},div({style:{fontSize:"18px",fontWeight:800}},"Tutor Tracker"),div({style:{fontSize:"11px",color:"#93c5fd",display:"flex",alignItems:"center",gap:"6px"}},formatDate(new Date()),span({style:{display:"inline-flex",alignItems:"center",gap:"3px",background:"rgba(255,255,255,0.12)",borderRadius:"10px",padding:"1px 8px"}},syncDot,syncLabel))),
+    avatar
+  ));
+  if(state.syncing){app.appendChild(div({style:{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:"14px"}},"Loading data…"));}
+  else{
+    const content=div({style:{padding:"16px"}});
+    if(state.view==="week"){content.appendChild(renderWeekTimetable());content.appendChild(renderCalendar());content.appendChild(renderDayPanel());}
+    else if(state.view==="class")content.appendChild(renderClassView());
+    else if(state.view==="students")content.appendChild(renderStudentsView());
+    app.appendChild(content);
+  }
+  app.appendChild(div({className:"bottom-nav"},
+    btn({className:"nav-tab",style:{color:state.view==="week"?"#1e3a5f":"#94a3b8"},onClick:()=>setState({view:"week"})},div({className:"nav-tab-icon"},"📅"),div({className:"nav-tab-label"},"Schedule")),
+    btn({className:"nav-tab",style:{color:state.view==="class"?"#1e3a5f":"#94a3b8"},onClick:()=>{const f=state.data.classes[0];setState({view:"class",selectedClass:f?f.id:null});}},div({className:"nav-tab-icon"},"📚"),div({className:"nav-tab-label"},"Classes")),
+    btn({className:"nav-tab",style:{color:state.view==="students"?"#1e3a5f":"#94a3b8"},onClick:()=>setState({view:"students"})},div({className:"nav-tab-icon"},"👥"),div({className:"nav-tab-label"},"Students"))
+  ));
+  const modal=renderModal();
+  if(modal)app.appendChild(modal);
+}
+
+function initFirebase(){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db=firebase.database();
+    auth=firebase.auth();
+    db.ref(".info/connected").on("value",snap=>setState({connected:snap.val()===true}));
+    auth.onAuthStateChanged(user=>{
+      if(user){
+        state.user=user;
+        state.authReady=true;
+        state.syncing=true;
+        startDataListener();
+        render();
+      } else {
+        if(dataListener){db.ref('data/'+(state.user&&state.user.uid)).off();dataListener=null;}
+        state.user=null;
+        state.authReady=true;
+        state.data={students:[],classes:[],attendance:{},collected:{}};
+        render();
+      }
+    });
+  }catch(e){console.error(e);setState({syncError:true,syncing:false,authReady:true});}
+}
+render();
+initFirebase();
+</script>
+</body>
+</html>
