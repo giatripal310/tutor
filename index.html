@@ -242,7 +242,7 @@ function renderClassView(){
   const studentRows=students.map(stu=>{
     const total=totalSessions(stu.id),threshold=studentThreshold(stu.id);
     const progress=sessionsSinceCollection(stu.id),dueAlert=progress>=threshold;
-    const barGreen=wasCollectedOnTime(stu.id),barColor=barGreen?"#22c55e":"#ef4444";
+    const barColor=dueAlert?"#ef4444":"#3b82f6";
     function getExpectedDates(cls,studentId){
       const scheduledDays=getDays(cls),today=new Date(todayISO),lastWeekMonday=addDays(getMondayOf(today),-7);
       const allSessions=Object.entries(state.data.attendance||{}).filter(([k,v])=>{const p=k.split('__');return p[1]===studentId&&(v==='present'||v==='absent_parent');}).map(([k])=>k.split('__')[2]).sort();
@@ -260,11 +260,11 @@ function renderClassView(){
       return div({style:{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"4px",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f0f4f8"}},
         span({style:{fontSize:"12px",color:isToday?"#1d4ed8":date>todayISO?"#7c3aed":"#334155",fontWeight:isToday||date>todayISO?700:400}},fmtAttDate(date)+(isToday?" ★":date>todayISO?" ↑":"")),
         btn({style:{background:status==="present"?"#dcfce7":"#f1f5f9",border:`1.5px solid ${status==="present"?"#86efac":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="present"?"#15803d":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="present"?null:"present")},"✓"),
-        btn({style:{background:status==="absent_teacher"?"#fef3c7":"#f1f5f9",border:`1.5px solid ${status==="absent_teacher"?"#f59e0b":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_teacher"?"#92400e":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_teacher"?null:"absent_teacher")},"T"),
-        btn({style:{background:status==="absent_parent"?"#fce7f3":"#f1f5f9",border:`1.5px solid ${status==="absent_parent"?"#ec4899":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_parent"?"#be185d":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_parent"?null:"absent_parent")},"P")
+        btn({style:{background:status==="absent_teacher"?"#fef3c7":"#f1f5f9",border:`1.5px solid ${status==="absent_teacher"?"#f59e0b":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_teacher"?"#92400e":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_teacher"?null:"absent_teacher")},"Off"),
+        btn({style:{background:status==="absent_parent"?"#fce7f3":"#f1f5f9",border:`1.5px solid ${status==="absent_parent"?"#ec4899":"#e2e8f0"}`,borderRadius:"14px",padding:"3px 8px",fontSize:"11px",fontWeight:600,color:status==="absent_parent"?"#be185d":"#94a3b8"},onClick:()=>setAttendance(cls.id,stu.id,date,status==="absent_parent"?null:"absent_parent")},"Abs")
       );
     });
-    return div({style:{border:`1.5px solid ${dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0"}`,borderRadius:"10px",padding:"14px",marginBottom:"10px",background:dueAlert?"#fef2f2":barGreen?"#f0fdf4":"#f8fafc"}},
+    return div({style:{border:`1.5px solid ${dueAlert?"#ef4444":"#e2e8f0"}`,borderRadius:"10px",padding:"14px",marginBottom:"10px",background:dueAlert?"#fef2f2":"#f8fafc"}},
       div({style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"8px",gap:"8px"}},
         div({style:{flex:1,minWidth:0}},
           span({style:{fontWeight:700,fontSize:"14px",color:"#0f172a"}},stu.name),
@@ -272,7 +272,7 @@ function renderClassView(){
           dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 7px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect"):span({})
         ),
         div({style:{display:"flex",gap:"6px",flexShrink:0}},
-          btn({style:{background:dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0",color:dueAlert||barGreen?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰 Collect"),
+          btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰 Collect"),
           btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>{cls.studentIds=(cls.studentIds||[]).filter(id=>id!==stu.id);fbSet(userPath()+'/classes',state.data.classes);render();}},"✕")
         )
       ),
@@ -283,9 +283,9 @@ function renderClassView(){
       div({style:{borderRadius:"8px",overflow:"hidden",border:"1px solid #e2e8f0",background:"#fff"}},
         div({style:{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"4px",padding:"5px 8px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}},
           span({style:{fontSize:"10px",fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}},"Date"),
-          span({style:{fontSize:"10px",fontWeight:700,color:"#22c55e"}},"✓"),
-          span({style:{fontSize:"10px",fontWeight:700,color:"#f59e0b"}},"T"),
-          span({style:{fontSize:"10px",fontWeight:700,color:"#ec4899"}},"P")
+          span({style:{fontSize:"10px",fontWeight:700,color:"#22c55e"}},"Present"),
+          span({style:{fontSize:"10px",fontWeight:700,color:"#f59e0b"}},"My Off"),
+          span({style:{fontSize:"10px",fontWeight:700,color:"#ec4899"}},"Absent")
         ),
         div({style:{padding:"0 8px",maxHeight:"220px",overflowY:"auto"}},expectedDates.length===0?div({style:{padding:"10px",fontSize:"12px",color:"#94a3b8"}},"No scheduled sessions yet."):div({},...tableRows))
       )
@@ -316,9 +316,9 @@ function renderStudentsView(){
     state.data.students.length===0?div({className:"card",style:{color:"#94a3b8",fontSize:"13px"}},"No students yet."):span({}),
     ...state.data.students.map(stu=>{
       const threshold=studentThreshold(stu.id),total=totalSessions(stu.id),progress=sessionsSinceCollection(stu.id);
-      const dueAlert=progress>=threshold,barGreen=wasCollectedOnTime(stu.id),barColor=barGreen?"#22c55e":"#ef4444";
+      const dueAlert=progress>=threshold,barColor=dueAlert?"#ef4444":"#3b82f6";
       const enrolledClasses=state.data.classes.filter(c=>(c.studentIds||[]).includes(stu.id));
-      return div({className:"card",style:{marginBottom:"10px",border:`1.5px solid ${dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0"}`,background:dueAlert?"#fef2f2":barGreen?"#f0fdf4":"#fff"}},
+      return div({className:"card",style:{marginBottom:"10px",border:`1.5px solid ${dueAlert?"#ef4444":"#e2e8f0"}`,background:dueAlert?"#fef2f2":"#fff"}},
         div({style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"8px",gap:"8px"}},
           div({style:{flex:1,minWidth:0}},
             span({style:{fontWeight:700,fontSize:"15px",color:"#0f172a"}},stu.name),
@@ -326,7 +326,7 @@ function renderStudentsView(){
             dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 8px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect Tuition"):span({})
           ),
           div({style:{display:"flex",gap:"6px",flexShrink:0}},
-            btn({style:{background:dueAlert?"#ef4444":barGreen?"#22c55e":"#e2e8f0",color:dueAlert||barGreen?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰"),
+            btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰"),
             btn({style:{background:"#f1f5f9",color:"#334155",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:600},onClick:()=>setState({modal:"editStudent",form:{name:stu.name,fee:stu.fee,studentId:stu.id}})},"Edit"),
             btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>deleteStudent(stu.id)},"✕")
           )
