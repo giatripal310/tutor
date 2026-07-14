@@ -18,6 +18,7 @@
   .modal h3 { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px; }
   .modal label { font-size: 11px; font-weight: 600; color: #64748b; display: block; margin-bottom: 3px; margin-top: 10px; }
   .modal input, .modal select { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; font-size: 13px; color: #0f172a; background: #f8fafc; outline: none; }
+  .modal input:focus { border-color: #3b82f6; background: #fff; }
   .modal .row { display: flex; gap: 8px; margin-top: 16px; }
   .btn-primary { flex: 1; background: #1e3a5f; color: #fff; border: none; border-radius: 8px; padding: 10px 0; font-weight: 700; font-size: 14px; cursor: pointer; }
   .btn-cancel { background: #f1f5f9; color: #64748b; border: none; border-radius: 8px; padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer; }
@@ -29,6 +30,10 @@
   .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; gap: 2px; }
   .nav-tab-icon { font-size: 20px; line-height: 1; }
   .nav-tab-label { font-size: 10px; font-weight: 700; letter-spacing: 0.2px; }
+
+  /* Toast notifications (replaces alert()) */
+  .toast { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%) translateY(10px); background: #0f172a; color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; z-index: 300; opacity: 0; transition: opacity 0.25s, transform 0.25s; box-shadow: 0 8px 24px rgba(0,0,0,0.25); max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* Sign-in screen */
   .signin-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; background: #f0f4f8; }
@@ -50,16 +55,36 @@ const MONTHS=["January","February","March","April","May","June","July","August",
 const CLASS_COLORS=[{bg:"#dbeafe",border:"#3b82f6",text:"#1d4ed8"},{bg:"#fce7f3",border:"#ec4899",text:"#be185d"},{bg:"#d1fae5",border:"#10b981",text:"#065f46"},{bg:"#ede9fe",border:"#8b5cf6",text:"#5b21b6"},{bg:"#ffedd5",border:"#f97316",text:"#9a3412"},{bg:"#cffafe",border:"#06b6d4",text:"#155e75"},{bg:"#fef9c3",border:"#eab308",text:"#713f12"},{bg:"#ffe4e6",border:"#f43f5e",text:"#9f1239"}];
 let uid=()=>Math.random().toString(36).slice(2,8);
 function toISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+// FIX: parse "YYYY-MM-DD" as a LOCAL date. new Date("YYYY-MM-DD") parses as UTC midnight,
+// which shifts the day in non-UTC timezones and made "today" sometimes count as past.
+function parseISO(iso){const[y,m,d]=iso.split('-').map(Number);return new Date(y,m-1,d);}
 function formatDate(d){return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;}
 function getMondayOf(date){const d=new Date(date),day=d.getDay();d.setDate(d.getDate()+(day===0?-6:1-day));d.setHours(0,0,0,0);return d;}
 function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+n);return d;}
 function buildWeeks(mon){const w=[];for(let i=0;i<4;i++){const wk=[];for(let d=0;d<7;d++)wk.push(addDays(mon,i*7+d));w.push(wk);}return w;}
-const todayISO=toISO(new Date());
-const baseMonday=getMondayOf(new Date());
-const weeks=buildWeeks(baseMonday);
+// FIX: these were computed once at page load, so if the app stayed open past midnight
+// (or the phone woke up the next day), "today" and the week grid were stale.
+let todayISO=toISO(new Date());
+let baseMonday=getMondayOf(new Date());
+let weeks=buildWeeks(baseMonday);
+function refreshDate(){const now=toISO(new Date());if(now!==todayISO){todayISO=now;baseMonday=getMondayOf(new Date());weeks=buildWeeks(baseMonday);}}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&state.authReady)render();});
 const firebaseConfig={apiKey:"AIzaSyDC8kNTggQ2E0yn6L5flZKBDfEcFZ2dse4",authDomain:"tutor-tracker-10819.firebaseapp.com",databaseURL:"https://tutor-tracker-10819-default-rtdb.firebaseio.com",projectId:"tutor-tracker-10819",storageBucket:"tutor-tracker-10819.firebasestorage.app",messagingSenderId:"1060597127713",appId:"1:1060597127713:web:3304a5e20521c60032e160"};
 let db=null,auth=null,dataListener=null;
 let state={data:{students:[],classes:[],attendance:{},collected:{}},view:"week",selectedDate:todayISO,selectedClass:null,modal:null,form:{},connected:false,syncing:true,syncError:false,user:null,authReady:false};
+
+// --- Toast + styled confirm (replaces native alert()/confirm()) ---
+function showToast(msg){
+  const t=document.createElement("div");
+  t.className="toast";t.textContent=msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add("show"));
+  setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},2500);
+}
+let pendingConfirm=null;
+function showConfirm(message,onYes){pendingConfirm=onYes;setState({modal:"confirm",form:{message}});}
+function closeModal(){pendingConfirm=null;setState({modal:null,form:{}});}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&state.modal)closeModal();});
 
 function userPath(){ return 'data/'+state.user.uid; }
 function setState(patch){Object.assign(state,patch);render();}
@@ -72,31 +97,38 @@ function getDays(cls){if(cls.schedule)return Object.keys(cls.schedule);return cl
 function classesOnDay(dayName){return state.data.classes.filter(c=>getDays(c).includes(dayName)).sort((a,b)=>getTimeForDay(a,dayName).localeCompare(getTimeForDay(b,dayName)));}
 function hasTutoringOnDate(dateObj){const raw=dateObj.getDay();const dayName=raw===0?"Sunday":DAYS[raw-1];return state.data.classes.some(c=>getDays(c).includes(dayName));}
 function studentsInClass(cls){return(cls.studentIds||[]).map(id=>getStudent(id)).filter(Boolean);}
-function attKey(classId,studentId,date){return `${classId}__${studentId}__${date}`;}
+// FIX: sanitize inside attKey so the key used in local state always matches the key
+// stored in Firebase (previously only the Firebase write was sanitized).
+function attKey(classId,studentId,date){return `${classId}__${studentId}__${date}`.replace(/\./g,'_');}
 function getAttStatus(classId,studentId,date){return(state.data.attendance||{})[attKey(classId,studentId,date)]||null;}
 function totalSessions(studentId){return Object.entries(state.data.attendance||{}).filter(([k,v])=>{const parts=k.split('__');return parts[1]===studentId&&(v==='present'||v==='absent_parent');}).length;}
 function sessionsSinceCollection(studentId){const total=totalSessions(studentId);const entry=(state.data.collected||{})[studentId];if(!entry)return total;if(typeof entry==='object'&&entry.atSession!==undefined)return total-entry.atSession;const threshold=studentThreshold(studentId);return total%threshold===0&&total>0?threshold:total%threshold;}
-function wasCollectedOnTime(studentId){const entry=(state.data.collected||{})[studentId];if(!entry||typeof entry!=='object')return false;const threshold=studentThreshold(studentId);return entry.onTime===true&&(entry.atSession!==undefined?sessionsSinceCollection(studentId)<threshold:false);}
 function studentThreshold(studentId){const daysPerWeek=state.data.classes.filter(c=>(c.studentIds||[]).includes(studentId)).reduce((sum,c)=>getDays(c).length+sum,0);return Math.max(daysPerWeek,1)*4;}
 function getAlerts(){return state.data.students.filter(stu=>{const threshold=studentThreshold(stu.id);const progress=sessionsSinceCollection(stu.id);return progress>=threshold;}).map(stu=>({studentId:stu.id,studentName:stu.name,fee:stu.fee,pending:sessionsSinceCollection(stu.id),threshold:studentThreshold(stu.id)}));}
-function addClass(){const{name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return alert("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return alert("Please set a time for "+day);}const cls={id:uid(),name,schedule,studentIds:[]};state.data.classes.push(cls);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
-function deleteClass(id){if(!confirm("Delete this class?"))return;state.data.classes=state.data.classes.filter(c=>c.id!==id);fbSet(userPath()+'/classes',state.data.classes);setState({selectedClass:null,view:"week"});}
-function editClass(){const{classId,name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return alert("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return alert("Please set a time for "+day);}const cls=state.data.classes.find(c=>c.id===classId);if(!cls)return;cls.name=name;cls.schedule=schedule;delete cls.days;delete cls.time;fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
+function addClass(){const{name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return showToast("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return showToast("Please set a time for "+day);}const cls={id:uid(),name,schedule,studentIds:[]};state.data.classes.push(cls);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
+function deleteClass(id){showConfirm("Delete this class?",()=>{state.data.classes=state.data.classes.filter(c=>c.id!==id);fbSet(userPath()+'/classes',state.data.classes);setState({selectedClass:null,view:"week"});});}
+function editClass(){const{classId,name,schedule}=state.form;if(!name||!schedule||!Object.keys(schedule).length)return showToast("Fill in class name and pick at least one day with a time.");for(const[day,time]of Object.entries(schedule)){if(!time.trim())return showToast("Please set a time for "+day);}const cls=state.data.classes.find(c=>c.id===classId);if(!cls)return;cls.name=name;cls.schedule=schedule;delete cls.days;delete cls.time;fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
 function saveStudentAssignments(classId,studentIds){const cls=state.data.classes.find(c=>c.id===classId);if(!cls)return;cls.studentIds=studentIds;fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});}
-function addStudent(){const{name,fee}=state.form;if(!name)return alert("Enter student name.");const stu={id:uid(),name,fee:parseFloat(fee)||0};state.data.students.push(stu);fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
-function editStudent(studentId){const{name,fee}=state.form;if(!name)return alert("Enter student name.");const stu=state.data.students.find(s=>s.id===studentId);if(!stu)return;stu.name=name;stu.fee=parseFloat(fee)||0;fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
-function deleteStudent(studentId){if(!confirm("Remove this student? Their attendance history will be kept."))return;state.data.students=state.data.students.filter(s=>s.id!==studentId);state.data.classes.forEach(c=>{c.studentIds=(c.studentIds||[]).filter(id=>id!==studentId);});fbSet(userPath()+'/students',state.data.students);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{},selectedStudent:null});}
-function setAttendance(classId,studentId,date,value){if(!state.data.attendance)state.data.attendance={};const key=attKey(classId,studentId,date);const safeKey=key.replace(/\./g,'_');if(value===null){delete state.data.attendance[key];fbRemove(userPath()+`/attendance/${safeKey}`);}else{state.data.attendance[key]=value;fbSet(userPath()+`/attendance/${safeKey}`,value);}render();}
+function addStudent(){const{name,fee}=state.form;if(!name)return showToast("Enter student name.");const stu={id:uid(),name,fee:parseFloat(fee)||0};state.data.students.push(stu);fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
+function editStudent(studentId){const{name,fee}=state.form;if(!name)return showToast("Enter student name.");const stu=state.data.students.find(s=>s.id===studentId);if(!stu)return;stu.name=name;stu.fee=parseFloat(fee)||0;fbSet(userPath()+'/students',state.data.students);setState({modal:null,form:{}});}
+function deleteStudent(studentId){showConfirm("Remove this student? Their attendance history will be kept.",()=>{state.data.students=state.data.students.filter(s=>s.id!==studentId);state.data.classes.forEach(c=>{c.studentIds=(c.studentIds||[]).filter(id=>id!==studentId);});fbSet(userPath()+'/students',state.data.students);fbSet(userPath()+'/classes',state.data.classes);setState({modal:null,form:{}});});}
+function setAttendance(classId,studentId,date,value){if(!state.data.attendance)state.data.attendance={};const key=attKey(classId,studentId,date);if(value===null){delete state.data.attendance[key];fbRemove(userPath()+`/attendance/${key}`);}else{state.data.attendance[key]=value;fbSet(userPath()+`/attendance/${key}`,value);}render();}
 function markCollected(studentId){if(!state.data.collected)state.data.collected={};const threshold=studentThreshold(studentId);const total=totalSessions(studentId);const progress=sessionsSinceCollection(studentId);const isOnTime=progress<=threshold;state.data.collected[studentId]={atSession:total,onTime:isOnTime};fbSet(userPath()+`/collected/${studentId}`,state.data.collected[studentId]);render();}
 
 function signIn(){
   const provider=new firebase.auth.GoogleAuthProvider();
   auth.signInWithPopup(provider).catch(e=>{
-    // fallback to redirect on mobile
-    auth.signInWithRedirect(provider);
+    // FIX: only fall back to redirect when the popup genuinely can't open.
+    // Previously ANY error (including the user just closing the popup) triggered
+    // a full-page redirect, which felt like the app hijacking the browser.
+    if(e&&(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')){
+      auth.signInWithRedirect(provider);
+    }else if(e&&e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request'){
+      console.error(e);showToast("Sign-in failed. Please try again.");
+    }
   });
 }
-function signOut(){if(!confirm("Sign out?"))return;if(dataListener){db.ref(userPath()).off();dataListener=null;}auth.signOut();}
+function signOut(){showConfirm("Sign out?",()=>{if(dataListener){db.ref(userPath()).off();dataListener=null;}auth.signOut();});}
 
 function startDataListener(){
   if(dataListener)return;
@@ -121,23 +153,21 @@ function btn(a,...c){return el("button",a,...c);}
 function span(a,...c){return el("span",a,...c);}
 
 function renderSignIn(){
-  const googleIcon=`<svg viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20c11 0 19.7-7.9 19.7-20 0-1.3-.1-2.7-.2-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/><path fill="#FBBC05" d="M24 43c5.6 0 10.6-1.9 14.5-5.1l-6.7-5.5C29.8 34.4 27 35.5 24 35.5c-5.7 0-10.6-3.9-12.3-9.2l-7 5.4C8 38.7 15.4 43 24 43z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.8l6.7 5.5C42.4 36 45 30 45 23c0-1.3-.1-2.7-.5-3z"/></svg>`;
+  const googleIcon=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20c11 0 19.7-7.9 19.7-20 0-1.3-.1-2.7-.2-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/><path fill="#FBBC05" d="M24 43c5.6 0 10.6-1.9 14.5-5.1l-6.7-5.5C29.8 34.4 27 35.5 24 35.5c-5.7 0-10.6-3.9-12.3-9.2l-7 5.4C8 38.7 15.4 43 24 43z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.8l6.7 5.5C42.4 36 45 30 45 23c0-1.3-.1-2.7-.5-3z"/></svg>`;
   const appDiv=document.getElementById("app");
   appDiv.innerHTML="";
+  const googleBtn=btn({className:"google-btn",onClick:signIn});
+  googleBtn.innerHTML=googleIcon;
+  googleBtn.appendChild(document.createTextNode("Continue with Google"));
   appDiv.appendChild(
     div({className:"signin-screen"},
       div({className:"signin-logo"},"📅"),
       div({className:"signin-title"},"Tutor Tracker"),
       div({className:"signin-sub"},"Keep track of your tutoring schedule, attendance, and tuition — all in one place."),
-      btn({className:"google-btn",onClick:signIn},
-        el("span",{},googleIcon.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"')),
-        "Continue with Google"
-      ),
+      googleBtn,
       div({className:"signin-note"},"Your data is private. Only you can see your classes and students.")
     )
   );
-  // Actually set innerHTML for SVG to work
-  document.querySelector(".google-btn span").innerHTML=googleIcon;
 }
 
 function renderWeekTimetable(){
@@ -145,7 +175,7 @@ function renderWeekTimetable(){
   for(let i=0;i<7;i++)weekDates.push(addDays(baseMonday,i));
   const dayCards=weekDates.map((d,i)=>{
     const iso=toISO(d),isToday=iso===todayISO,isSel=iso===state.selectedDate;
-    const isPast=d<new Date(todayISO),dayName=DAYS[i],dayCls=classesOnDay(dayName);
+    const isPast=iso<todayISO,dayName=DAYS[i],dayCls=classesOnDay(dayName);
     return div({style:{background:isSel?"#f0f6ff":"#fff",border:`1.5px solid ${isToday?"#3b82f6":isSel?"#bfdbfe":"#e2e8f0"}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden",cursor:"pointer"},onClick:()=>setState({selectedDate:iso})},
       div({style:{display:"flex",alignItems:"center",gap:"8px",padding:"10px 14px",background:isToday?"#1e3a5f":isSel?"#eff6ff":"transparent"}},
         span({style:{fontSize:"13px",fontWeight:800,color:isToday?"#fff":isPast?"#94a3b8":"#0f172a",minWidth:"30px"}},SHORT[i]),
@@ -184,7 +214,7 @@ function renderCalendar(){
   const dayHeaders=div({style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",marginBottom:"4px"}},...SHORT.map(s=>div({style:{textAlign:"center",fontSize:"10px",fontWeight:700,color:"#94a3b8"}},s)));
   const weekRows=weeks.map(week=>div({style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",marginBottom:"3px"}},...week.map(dateObj=>{
     const iso=toISO(dateObj),isToday=iso===todayISO,isSel=iso===state.selectedDate;
-    const isPast=dateObj<new Date(todayISO);
+    const isPast=iso<todayISO;
     const hasClass=hasTutoringOnDate(dateObj);
     return div({style:{textAlign:"center",padding:"5px 2px",borderRadius:"7px",cursor:"pointer",background:isSel?"#1e3a5f":isToday?"#dbeafe":"transparent",border:isToday&&!isSel?"1.5px solid #3b82f6":"1.5px solid transparent"},onClick:()=>setState({selectedDate:iso,view:"week"})},
       div({style:{fontSize:"13px",fontWeight:isToday||isSel?800:500,color:isSel?"#fff":isToday?"#1d4ed8":isPast?"#cbd5e1":"#0f172a"}},dateObj.getDate()+""),
@@ -200,8 +230,7 @@ function renderCalendar(){
 }
 
 function renderDayPanel(){
-  const[sy,sm,sd]=state.selectedDate.split('-').map(Number);
-  const selDateObj=new Date(sy,sm-1,sd),rawDay=selDateObj.getDay();
+  const selDateObj=parseISO(state.selectedDate),rawDay=selDateObj.getDay();
   const selDayName=rawDay===0?"Sunday":DAYS[rawDay-1],isToday=state.selectedDate===todayISO;
   const heading=div({style:{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:"12px"}},div({},
     span({style:{fontWeight:800,fontSize:"16px",color:"#1e3a5f"}},selDayName),
@@ -244,10 +273,10 @@ function renderClassView(){
     const progress=sessionsSinceCollection(stu.id),dueAlert=progress>=threshold;
     const barColor=dueAlert?"#ef4444":"#3b82f6";
     function getExpectedDates(cls,studentId){
-      const scheduledDays=getDays(cls),today=new Date(todayISO),lastWeekMonday=addDays(getMondayOf(today),-7);
+      const scheduledDays=getDays(cls),today=parseISO(todayISO),lastWeekMonday=addDays(getMondayOf(today),-7);
       const allSessions=Object.entries(state.data.attendance||{}).filter(([k,v])=>{const p=k.split('__');return p[1]===studentId&&(v==='present'||v==='absent_parent');}).map(([k])=>k.split('__')[2]).sort();
       const total=allSessions.length,threshold=studentThreshold(studentId),cycleStart=Math.floor(total/threshold)*threshold;
-      let cycleResetDate=null;if(cycleStart>0)cycleResetDate=addDays(new Date(allSessions[cycleStart-1]),1);
+      let cycleResetDate=null;if(cycleStart>0)cycleResetDate=addDays(parseISO(allSessions[cycleStart-1]),1);
       const start=cycleResetDate&&cycleResetDate>lastWeekMonday?cycleResetDate:lastWeekMonday;
       const oneWeekAhead=addDays(today,7),result=[];
       for(let d=new Date(start);d<=oneWeekAhead;d=addDays(d,1)){const raw=d.getDay();const dayName=raw===0?"Sunday":DAYS[raw-1];if(scheduledDays.includes(dayName))result.push(toISO(d));}
@@ -272,8 +301,8 @@ function renderClassView(){
           dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 7px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect"):span({})
         ),
         div({style:{display:"flex",gap:"6px",flexShrink:0}},
-          btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰 Collect"),
-          btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>{cls.studentIds=(cls.studentIds||[]).filter(id=>id!==stu.id);fbSet(userPath()+'/classes',state.data.classes);render();}},"✕")
+          btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>showConfirm(`Mark fee collected for ${stu.name}?`,()=>markCollected(stu.id))},"💰 Collect"),
+          btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>showConfirm(`Remove ${stu.name} from this class?`,()=>{cls.studentIds=(cls.studentIds||[]).filter(id=>id!==stu.id);fbSet(userPath()+'/classes',state.data.classes);render();})},"✕")
         )
       ),
       div({style:{marginBottom:"10px"}},
@@ -326,7 +355,7 @@ function renderStudentsView(){
             dueAlert?div({style:{marginTop:"4px",background:"#ef4444",color:"#fff",borderRadius:"5px",padding:"2px 8px",fontSize:"11px",fontWeight:700,display:"inline-block"}},"💰 Collect Tuition"):span({})
           ),
           div({style:{display:"flex",gap:"6px",flexShrink:0}},
-            btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>{if(confirm(`Mark fee collected for ${stu.name}?`))markCollected(stu.id);}},"💰"),
+            btn({style:{background:dueAlert?"#ef4444":"#e2e8f0",color:dueAlert?"#fff":"#64748b",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:700},onClick:()=>showConfirm(`Mark fee collected for ${stu.name}?`,()=>markCollected(stu.id))},"💰"),
             btn({style:{background:"#f1f5f9",color:"#334155",border:"none",borderRadius:"6px",padding:"6px 10px",fontSize:"11px",fontWeight:600},onClick:()=>setState({modal:"editStudent",form:{name:stu.name,fee:stu.fee,studentId:stu.id}})},"Edit"),
             btn({style:{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:"6px",padding:"6px 8px",fontSize:"11px"},onClick:()=>deleteStudent(stu.id)},"✕")
           )
@@ -344,6 +373,18 @@ function renderStudentsView(){
 
 function renderModal(){
   if(!state.modal)return null;
+  if(state.modal==="confirm"){
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")closeModal();}},
+      div({className:"modal"},
+        el("h3",{},"Please confirm"),
+        div({style:{fontSize:"13px",color:"#334155",lineHeight:"1.5"}},state.form.message||""),
+        div({className:"row"},
+          btn({className:"btn-primary",onClick:()=>{const fn=pendingConfirm;pendingConfirm=null;setState({modal:null,form:{}});if(fn)fn();}},"Yes"),
+          btn({className:"btn-cancel",onClick:closeModal},"Cancel")
+        )
+      )
+    );
+  }
   if(state.modal==="addClass"||state.modal==="editClass"){
     const isEdit=state.modal==="editClass";
     if(!state.form.schedule)state.form.schedule={};
@@ -352,27 +393,28 @@ function renderModal(){
       div({style:{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}},...DAYS.map(d=>{const checked=d in(state.form.schedule||{});return div({style:{padding:"4px 10px",borderRadius:"20px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:checked?"#1e3a5f":"#f1f5f9",color:checked?"#fff":"#64748b",border:checked?"1.5px solid #1e3a5f":"1.5px solid #e2e8f0",userSelect:"none"},onClick:()=>{const sch=Object.assign({},state.form.schedule||{});if(d in sch)delete sch[d];else sch[d]="";state.form.schedule=sch;setState({});}},d.slice(0,3));})),
       ...Object.keys(state.form.schedule||{}).map(d=>div({style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},span({style:{fontSize:"12px",fontWeight:600,color:"#334155",width:"40px",flexShrink:0}},d.slice(0,3)),el("input",{type:"text",placeholder:"e.g. 4:30 PM",value:(state.form.schedule||{})[d]||"",style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:"7px",padding:"6px 10px",fontSize:"13px",outline:"none"},onInput:e=>{state.form.schedule[d]=e.target.value;}})))
     );
-    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},isEdit?"Edit Class":"New Class"),el("label",{},"Class Name"),nameInp,el("label",{},"Days & Times"),daySection,div({className:"row"},btn({className:"btn-primary",onClick:isEdit?editClass:addClass},isEdit?"Save Changes":"Add Class"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")closeModal();}},div({className:"modal"},el("h3",{},isEdit?"Edit Class":"New Class"),el("label",{},"Class Name"),nameInp,el("label",{},"Days & Times"),daySection,div({className:"row"},btn({className:"btn-primary",onClick:isEdit?editClass:addClass},isEdit?"Save Changes":"Add Class"),btn({className:"btn-cancel",onClick:closeModal},`Cancel`))));
   }
   if(state.modal==="addStudent"){
     const nameInp=el("input",{type:"text",placeholder:"e.g. Bo",value:state.form.name||"",onInput:e=>state.form.name=e.target.value});
     const feeInp=el("input",{type:"number",placeholder:"e.g. 750",value:state.form.fee||"",onInput:e=>state.form.fee=e.target.value});
-    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"New Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k (e.g. 750 = 750k)"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:addStudent},"Add Student"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")closeModal();}},div({className:"modal"},el("h3",{},"New Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k (e.g. 750 = 750k)"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:addStudent},"Add Student"),btn({className:"btn-cancel",onClick:closeModal},`Cancel`))));
   }
   if(state.modal==="editStudent"){
     const nameInp=el("input",{type:"text",value:state.form.name||"",onInput:e=>state.form.name=e.target.value});
     const feeInp=el("input",{type:"number",value:state.form.fee||"",onInput:e=>state.form.fee=e.target.value});
-    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"Edit Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:()=>editStudent(state.form.studentId)},"Save"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")closeModal();}},div({className:"modal"},el("h3",{},"Edit Student"),el("label",{},"Name"),nameInp,el("label",{},"Tuition Fee in k"),feeInp,div({className:"row"},btn({className:"btn-primary",onClick:()=>editStudent(state.form.studentId)},"Save"),btn({className:"btn-cancel",onClick:closeModal},`Cancel`))));
   }
   if(state.modal==="assignStudents"){
     const classId=state.form.classId,selected=state.form.studentIds||[];
     const pills=div({style:{display:"flex",flexWrap:"wrap",gap:"6px",marginTop:"4px"}},...state.data.students.map(stu=>{const checked=selected.includes(stu.id);return div({style:{padding:"5px 12px",borderRadius:"20px",fontSize:"13px",fontWeight:600,cursor:"pointer",background:checked?"#1e3a5f":"#f1f5f9",color:checked?"#fff":"#64748b",border:checked?"1.5px solid #1e3a5f":"1.5px solid #e2e8f0",userSelect:"none"},onClick:()=>{state.form.studentIds=selected.includes(stu.id)?selected.filter(x=>x!==stu.id):[...selected,stu.id];setState({});}},stu.name);}));
     const noStudents=state.data.students.length===0?div({style:{color:"#94a3b8",fontSize:"13px",marginTop:"8px"}},"No students yet. Go to the Students tab to add some first."):null;
-    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")setState({modal:null,form:{}});}},div({className:"modal"},el("h3",{},"Assign Students to Class"),el("label",{},"Select students (tap to toggle)"),noStudents||pills,div({className:"row"},btn({className:"btn-primary",onClick:()=>saveStudentAssignments(classId,state.form.studentIds||[])},"Save"),btn({className:"btn-cancel",onClick:()=>setState({modal:null,form:{}})},`Cancel`))));
+    return div({className:"overlay",onClick:e=>{if(e.target.className==="overlay")closeModal();}},div({className:"modal"},el("h3",{},"Assign Students to Class"),el("label",{},"Select students (tap to toggle)"),noStudents||pills,div({className:"row"},btn({className:"btn-primary",onClick:()=>saveStudentAssignments(classId,state.form.studentIds||[])},"Save"),btn({className:"btn-cancel",onClick:closeModal},`Cancel`))));
   }
 }
 
 function render(){
+  refreshDate();
   if(!state.authReady){
     document.getElementById("app").innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:14px;color:#94a3b8;">Loading…</div>';
     return;
@@ -384,7 +426,7 @@ function render(){
   if(alerts.length>0){app.appendChild(div({style:{background:"#fef3c7",borderBottom:"2px solid #f59e0b",padding:"10px 16px"}},el("strong",{style:{color:"#92400e",fontSize:"13px"}},"💰 Tuition Due: "),span({style:{fontSize:"12px",color:"#92400e"}},alerts.map(a=>`${a.studentName} (${a.pending} sessions · ${a.fee}k)`).join("  ·  "))));}
   const syncDot=span({style:{width:"6px",height:"6px",borderRadius:"50%",display:"inline-block",background:state.syncError?"#f87171":state.syncing?"#fbbf24":state.connected?"#4ade80":"#94a3b8"}});
   const syncLabel=span({style:{fontSize:"10px"}},state.syncError?"Error":state.syncing?"Syncing…":state.connected?"Live":"Connecting…");
-  const avatar=state.user.photoURL?el("img",{src:state.user.photoURL,style:{width:"28px",height:"28px",borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",cursor:"pointer"},onClick:signOut}):btn({style:{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:"20px",color:"#fff",fontSize:"11px",fontWeight:600,padding:"4px 10px",cursor:"pointer"},onClick:signOut},"Sign out");
+  const avatar=state.user.photoURL?el("img",{src:state.user.photoURL,alt:"Account",style:{width:"28px",height:"28px",borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",cursor:"pointer"},onClick:signOut}):btn({style:{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:"20px",color:"#fff",fontSize:"11px",fontWeight:600,padding:"4px 10px",cursor:"pointer"},onClick:signOut},"Sign out");
   app.appendChild(div({style:{background:"#1e3a5f",color:"#fff",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}},
     div({},div({style:{fontSize:"18px",fontWeight:800}},"Tutor Tracker"),div({style:{fontSize:"11px",color:"#93c5fd",display:"flex",alignItems:"center",gap:"6px"}},formatDate(new Date()),span({style:{display:"inline-flex",alignItems:"center",gap:"3px",background:"rgba(255,255,255,0.12)",borderRadius:"10px",padding:"1px 8px"}},syncDot,syncLabel))),
     avatar
